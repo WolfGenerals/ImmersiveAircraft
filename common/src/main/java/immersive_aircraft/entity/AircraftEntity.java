@@ -28,30 +28,7 @@ public abstract class AircraftEntity extends EngineVehicle {
         return TRAILS;
     }
 
-    @Override
-    public void tick() {
-        // rolling interpolation
-        prevRoll = roll;
-        if (onGround()) {
-            setZRot(roll * 0.9f);
-        } else {
-            setZRot(-pressingInterpolatedX.getSmooth() * getProperties().get(VehicleStat.ROLL_FACTOR));
-        }
-
-        if (Double.isNaN(getDeltaMovement().x) || Double.isNaN(getDeltaMovement().y) || Double.isNaN(getDeltaMovement().z)) {
-            setDeltaMovement(0, 0, 0);
-        }
-
-        super.tick();
-    }
-
-    protected void convertPower(Vec3 direction) {
-        Vec3 velocity = getDeltaMovement();
-        double drag = Math.abs(direction.dot(velocity.normalize()));
-        setDeltaMovement(velocity.normalize()
-                .lerp(direction, getProperties().get(VehicleStat.LIFT))
-                .scale(velocity.length() * (drag * getProperties().get(VehicleStat.FRICTION) + (1.0 - getProperties().get(VehicleStat.FRICTION)))));
-    }
+    protected abstract void convertPower(Vec3 direction);
 
     @Override
     protected float getGroundDecay() {
@@ -61,28 +38,9 @@ public abstract class AircraftEntity extends EngineVehicle {
     }
 
     @Override
-    protected void updateController() {
-        // left-right
-        setYRot(getYRot() - getProperties().get(VehicleStat.YAW_SPEED) * pressingInterpolatedX.getSmooth());
-
-        // forwards-backwards
-        if (!onGround()) {
-            setXRot(getXRot() + getProperties().get(VehicleStat.PITCH_SPEED) * pressingInterpolatedZ.getSmooth());
-        }
-        setXRot(getXRot() * (1.0f - getProperties().getAdditive(VehicleStat.STABILIZER)));
-    }
-
-    @Override
     protected void updateVelocity() {
         // get direction
         Vector3f direction = getForwardDirection();
-
-        // glide
-        float diff = (float) (lastY - getY());
-        if (lastY != 0.0 && getProperties().get(VehicleStat.GLIDE_FACTOR) > 0 && diff != 0.0) {
-            setDeltaMovement(getDeltaMovement().add(toVec3d(direction).scale(diff * getProperties().get(VehicleStat.GLIDE_FACTOR) * (1.0f - Math.abs(direction.y)))));
-        }
-        lastY = (float) getY();
 
         // convert power
         convertPower(toVec3d(direction));
@@ -102,6 +60,33 @@ public abstract class AircraftEntity extends EngineVehicle {
             float offsetStrength = 0.005f;
             setDeltaMovement(getDeltaMovement().add(effect.x * offsetStrength, 0.0f, effect.z * offsetStrength));
         }
+    }
+
+    protected void applyFriction() {
+        // Decay is the basic factor of friction, basically the density of the material slowing down the vehicle
+        float decay = 1.0f - getProperties().get(VehicleStat.FRICTION);
+        float gravity = getGravity();
+        if (wasTouchingWater) {
+            gravity *= 0.25f;
+            decay = 0.9f;
+        } else if (onGround()) {
+            if (isVehicle()) {
+                decay = getGroundDecay();
+            } else {
+                decay = 0.75f;
+            }
+        }
+
+        // Velocity decay
+        Vec3 velocity = getDeltaMovement();
+        float hd = getProperties().get(VehicleStat.HORIZONTAL_DECAY);
+        float vd = getProperties().get(VehicleStat.VERTICAL_DECAY);
+        setDeltaMovement(velocity.x * decay * hd, velocity.y * decay * vd + gravity, velocity.z * decay * hd);
+
+        // Rotation decay
+        float rf = decay * getProperties().get(VehicleStat.ROTATION_DECAY);
+        pressingInterpolatedX.decay(0.0f, 1.0f - rf);
+        pressingInterpolatedZ.decay(0.0f, 1.0f - rf);
     }
 
     public void chill() {

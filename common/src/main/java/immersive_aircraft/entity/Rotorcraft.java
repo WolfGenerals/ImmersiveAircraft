@@ -43,4 +43,33 @@ public abstract class Rotorcraft extends AircraftEntity {
                 newVelocity.z
         );
     }
+
+    @Override
+    public void tick() {
+        // rolling interpolation
+        prevRoll = roll;
+        if (onGround()) {
+            setZRot(roll * 0.9f);
+        } else {
+            setZRot(-pressingInterpolatedX.getSmooth() * getProperties().get(VehicleStat.ROLL_FACTOR));
+        }
+
+        if (Double.isNaN(getDeltaMovement().x) || Double.isNaN(getDeltaMovement().y) || Double.isNaN(getDeltaMovement().z)) {
+            setDeltaMovement(0, 0, 0);
+        }
+
+        super.tick();
+    }
+
+    @Override
+    protected void updateController() {
+        // left-right
+        setYRot(getYRot() - getProperties().get(VehicleStat.YAW_SPEED) * pressingInterpolatedX.getSmooth());
+
+        // forwards-backwards
+        if (!onGround()) {
+            setXRot(getXRot() + getProperties().get(VehicleStat.PITCH_SPEED) * pressingInterpolatedZ.getSmooth());
+        }
+        setXRot(getXRot() * (1.0f - getProperties().getAdditive(VehicleStat.STABILIZER)));
+    }
 }
